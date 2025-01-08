@@ -26,8 +26,8 @@ const Decoded: React.FC<{
   const [showExplained, setShowExplained] = useState(false);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const isValidDate = useCallback((value: any): boolean => {
-    return isValid(value);
+  const isValidDate = useCallback((value: any, key: string): boolean => {
+    return ['iat', 'exp'].includes(key) && isValid(value);
   }, []);
 
   const [selectedAlgorithm, setSelectedAlgorithm] = React.useState<
@@ -174,7 +174,7 @@ const Decoded: React.FC<{
               <br />
               {payload
                 ? Object.entries(payload).map(([key, value]) => {
-                    const isDate = isValidDate(value);
+                    const isDate = isValidDate(value, key);
 
                     let valuePrefix = '';
                     if (key === 'exp') {
