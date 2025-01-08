@@ -13,38 +13,73 @@ export async function validateToken(jwt: string, secret?: string): Promise<{
   expired: boolean;
   error?: string;
 }> {
+  try {
+    const decodedHeader = decodeProtectedHeader(jwt) as JWTHeaderParameters;
+    const decodedPayload = decodeJwt(jwt);
+    
+    const decodedResponse: JWTVerifyResult = {
+      protectedHeader: decodedHeader,
+      payload: decodedPayload,
+    };
 
-  const decodedHeader = decodeProtectedHeader(jwt) as JWTHeaderParameters;
-  const decodedPayload = decodeJwt(jwt);
-  
-  const decodedResponse: JWTVerifyResult = {
-    protectedHeader: decodedHeader,
-    payload: decodedPayload,
-  };
+    let expired = false;
+    if (decodedResponse.payload.exp) {
+      expired = new Date() > new Date(decodedResponse.payload.exp * 1000);
+    }
 
-  let expired = false;
-  if (decodedResponse.payload.exp) {
-    expired = new Date() >new Date(decodedResponse.payload.exp * 1000);
-  }
+    // Verify the token with symmetric encryption
+    if (decodedHeader.alg.toLowerCase().startsWith('hs')) {
+      try {
+        await jwtVerify(jwt, new TextEncoder().encode(secret));
+        return {
+          verified: true,
+          decoded: decodedResponse,
+          expired,
+        };
+      } catch (err) {
+        if (err instanceof errors.JWTExpired) {
+          return {
+            verified: true,
+            decoded: decodedResponse,
+            expired,
+          };
+        }
 
-  // Verify the token with symmetric encryption
-  if (decodedHeader.alg.toLowerCase().startsWith('hs')) {
+        return {
+          verified: false,
+          decoded: decodedResponse,
+          expired,
+          error: (err as Error).message,
+        };
+      }
+    }
+
+    // Get key from db
+    let key;
+    if (decodedHeader.kid) {
+      key = await storage.keys.getKeyById(decodedHeader.kid);
+    }
+    
+    if (!key) {
+      console.log('No key found');
+      return {
+        verified: false,
+        decoded: decodedResponse,
+        expired,
+      };
+    }
+
+    // if the key was found, then verify the token
+    const jwk = (JSON.parse(key.key)) as JWK;
+
     try {
-      await jwtVerify(jwt, new TextEncoder().encode(secret));
+      await importJwkAndVerify(jwt, jwk);
       return {
         verified: true,
         decoded: decodedResponse,
         expired,
       };
     } catch (err) {
-      if (err instanceof errors.JWTExpired) {
-        return {
-          verified: true,
-          decoded: decodedResponse,
-          expired,
-        };
-      }
-
       return {
         verified: false,
         decoded: decodedResponse,
@@ -52,42 +87,14 @@ export async function validateToken(jwt: string, secret?: string): Promise<{
         error: (err as Error).message,
       };
     }
-  }
-
-  // Get key from db
-  let key;
-  if (decodedHeader.kid) {
-    key = await storage.keys.getKeyById(decodedHeader.kid);
-  }
- 
-  if (!key) {
-    console.log('No key found');
+  } catch (e) {
     return {
       verified: false,
-      decoded: decodedResponse,
-      expired,
+      decoded: { payload: {}, protectedHeader: {} },
+      expired: false,
+      error: (e as Error).message
     };
   }
-
-  // if the key was found, then verify the token
-  const jwk = (JSON.parse(key.key)) as JWK;
-
-  try {
-    await importJwkAndVerify(jwt, jwk);
-    return {
-      verified: true,
-      decoded: decodedResponse,
-      expired,
-    };
-  } catch (err) {
-    return {
-      verified: false,
-      decoded: decodedResponse,
-      expired,
-      error: (err as Error).message,
-    };
-  }
-  
 }
 
 async function importJwkAndVerify(jwt: string, key: JWK): Promise<any | null> {

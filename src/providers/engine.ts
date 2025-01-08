@@ -24,13 +24,18 @@ export type ClaimMatcher = {
 }
 
 export function detectProvider(token: string): TokenProvider | null {
-    const tokenPayload = decodeJwt(token);
-    for (const provider of providers) {
-        if (provider.match.some(match => matchToken(tokenPayload, match))) {
-            return provider;
+    try {
+        const tokenPayload = decodeJwt(token);
+        for (const provider of providers) {
+            if (provider.match.some(match => matchToken(tokenPayload, match))) {
+                return provider;
+            }
         }
+        return null;
+    } catch (e) {
+        // Silently handle invalid JWT
+        return null;
     }
-    return null;
 }
 
 function matchToken(tokenPayload: JWTPayload, match: TokenMatch): boolean {
